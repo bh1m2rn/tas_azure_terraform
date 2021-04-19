@@ -7,18 +7,21 @@ az login
 
 read -p 'Please enter the Opsman exact version and build. 
 You can find that info here https://network.pivotal.io/products/ops-manager/#/releases (Example: 2.9.11-build.186). : ' OPSMAN_VERSION
-# read -p 'Please enter the TAS version you would like to install: ' TAS_VERSION
-# read -p 'Please enter your Pivnet API refresh token. If you do NOT have one: Log into pivnet > edit profile > request new refresh token). ' REFRESH_TOKEN
-read -p 'Which is your preferred location? (eastus or westus): ' EAST_WEST
+read -p 'Please enter the TAS version you would like to install: ' TAS_VERSION
+read -p 'Please enter your Pivnet API refresh token. If you do NOT have one: Log into pivnet > edit profile > request new refresh token). ' REFRESH_TOKEN
+read -p 'Which is your preferred location? (eastus or westus): ' TF_VAR_location
 read -p 'Please enter a unique name for your resource group - all lowercase (Example: jsmith): ' RESOURCE_GROUP
 read -sp 'Please enter a new password for Opsman: ' OPSMAN_PASSWORD
 echo ''
 
-export TF_VAR_location=$EAST_WEST
-export TF_VAR_opsman_image_url="https://opsmanager$TF_VAR_location.blob.core.windows.net/images/ops-manager-$OPSMAN_VERSION.vhd"
 export TF_VAR_resource_group_name=$RESOURCE_GROUP
+export TF_VAR_domain="used4testing.xyz" 
+export TF_VAR_location
+export TF_VAR_opsman_image_url="https://opsmanager$TF_VAR_location.blob.core.windows.net/images/ops-manager-$OPSMAN_VERSION.vhd"
 export TF_VAR_sp_identifier="http://BoshAzure$RESOURCE_GROUP"
-export OPSMAN_URL="opsman.$RESOURCE_GROUP.used4testing.xyz"
+export OPSMAN_URL="opsman.$RESOURCE_GROUP.$TF_VAR_domain"
+export TAS_VERSION
+export REFRESH_TOKEN
 
 # Create a keypair
 if [ -d "$HOME/.ssh/azurekeys" ]; then
@@ -35,6 +38,8 @@ terraform apply "tas.tfplan"
 
 source next-step.txt 
 rm next-step.txt 
+
+sleep 60
 
 opsman_authentication_setup()
 {
@@ -53,9 +58,9 @@ opsman_authentication_setup()
 EOF
 }
 
+echo "Setting up Opsman authentication..."
 curl -k -X POST -H "Content-Type: application/json" -d "$(opsman_authentication_setup)" "https://$OPSMAN_URL/api/v0/setup"
 
-echo "Setting up Opsman authentication..."
 sleep 60
 
 uaac target https://$OPSMAN_URL/uaa --skip-ssl-validation
@@ -215,93 +220,113 @@ EOF
 
 curl -k -X PUT -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(az_singleton)" "https://$OPSMAN_URL/api/v0/staged/director/network_and_az"
 
-# echo "Retrieving Tanzu Network access token..."
-# generate_pivnet_token()
-# {
-# cat <<EOF
-# {"refresh_token":"$REFRESH_TOKEN"}
-# EOF
-# }
+echo "Retrieving Tanzu Network access token..."
+generate_pivnet_token()
+{
+cat <<EOF
+{"refresh_token":"$REFRESH_TOKEN"}
+EOF
+}
 
-# PIVNET_TOKEN=$(curl -sX POST https://network.pivotal.io/api/v2/authentication/access_tokens -d "$(generate_pivnet_token)" | jq -r '.access_token')
+PIVNET_TOKEN=$(curl -sX POST https://network.pivotal.io/api/v2/authentication/access_tokens -d "$(generate_pivnet_token)" | jq -r '.access_token')
 
-# echo "Creating a product download link..."
-# RELEASE_ID=$(curl -sX GET https://network.pivotal.io/api/v2/products/elastic-runtime/releases -H "Authorization: Bearer $PIVNET_TOKEN" |jq -r --arg TAS_VERSION "$TAS_VERSION" '.[] | .[] | select(.version==$TAS_VERSION) | .id')
+echo "Creating a product download link..."
+RELEASE_ID=$(curl -sX GET https://network.pivotal.io/api/v2/products/elastic-runtime/releases -H "Authorization: Bearer $PIVNET_TOKEN" |jq -r --arg TAS_VERSION "$TAS_VERSION" '.[] | .[] | select(.version==$TAS_VERSION) | .id')
 
-# PRODUCT_FILE_URL=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/product_files" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | select(.name=="Pivotal Application Service") | ._links.download.href')
+PRODUCT_FILE_URL=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/product_files" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | select(.name=="Pivotal Application Service") | ._links.download.href')
 
-# echo "Downloading TAS..."
-# DOWNLOAD_LINK=$(curl -sX GET $PRODUCT_FILE_URL -H "Authorization: Bearer $PIVNET_TOKEN" | awk '{ print substr ($0, 36, length($0) - 66 ) }' | sed 's/amp;//g')
+echo "Downloading TAS..."
+DOWNLOAD_LINK=$(curl -sX GET $PRODUCT_FILE_URL -H "Authorization: Bearer $PIVNET_TOKEN" | awk '{ print substr ($0, 36, length($0) - 66 ) }' | sed 's/amp;//g')
 
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "cat << EOF > /home/ubuntu/download_tas.sh 
-# curl -X GET '$DOWNLOAD_LINK' -o tas-tile.pivotal
-# EOF"
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "cat << EOF > /home/ubuntu/download_tas.sh 
+curl -X GET '$DOWNLOAD_LINK' -o tas-tile.pivotal
+EOF"
 
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL 'bash /home/ubuntu/download_tas.sh'
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL 'bash /home/ubuntu/download_tas.sh'
 
-# echo "Uploading TAS to Opsman...this could take up to an hour..."
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "curl -k "https://$OPSMAN_IP/api/v0/available_products" -X POST -H 'Authorization: Bearer $OPSMAN_TOKEN' -F 'product[file]=@/home/ubuntu/tas-tile.pivotal'"
+echo "Uploading TAS to Opsman...this could take a while..."
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "curl -k "https://$OPSMAN_URL/api/v0/available_products" -X POST -H 'Authorization: Bearer $OPSMAN_TOKEN' -F 'product[file]=@/home/ubuntu/tas-tile.pivotal'"
 
-# echo "TAS upload completed..."
+echo "TAS upload completed..."
 
 
-# stage_product()
-# {
-#   cat <<EOF
-# {"name": "cf",
-# "product_version": "$TAS_VERSION"}
-# EOF
-# }
+stage_product()
+{
+  cat <<EOF
+{"name": "cf",
+"product_version": "$TAS_VERSION"}
+EOF
+}
 
-# echo "Staging TAS..."
-# curl -k -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(stage_product)" "https://$OPSMAN_URL/api/v0/staged/products"
+echo "Staging TAS..."
+curl -k -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(stage_product)" "https://$OPSMAN_URL/api/v0/staged/products"
 
-# echo "Downloading Stemcell..."
-# STEMCELL_ID=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/dependencies" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | .[] | select(.product.slug=="stemcells-ubuntu-xenial") | .id' 2>/dev/null | sed 1q)
+echo "Downloading Stemcell..."
+STEMCELL_ID=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/dependencies" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | .[] | select(.product.slug=="stemcells-ubuntu-xenial") | .id' 2>/dev/null | sed 1q)
 
-# STEMCELL_VERSION=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/dependencies" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | .[] | select(.product.slug=="stemcells-ubuntu-xenial") | .version' 2>/dev/null | sed 1q)
+STEMCELL_VERSION=$(curl -sX GET "https://network.pivotal.io/api/v2/products/elastic-runtime/releases/$RELEASE_ID/dependencies" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | .[] | select(.product.slug=="stemcells-ubuntu-xenial") | .version' 2>/dev/null | sed 1q)
 
-# STEMCELL_PRODUCT_URL=$(curl -sX GET "https://network.pivotal.io/api/v2/products/stemcells-ubuntu-xenial/releases/$STEMCELL_ID/product_files" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | select(.name | contains("Azure") ) | ._links.download.href' 2>/dev/null)
+STEMCELL_PRODUCT_URL=$(curl -sX GET "https://network.pivotal.io/api/v2/products/stemcells-ubuntu-xenial/releases/$STEMCELL_ID/product_files" -H "Authorization: Bearer $PIVNET_TOKEN" | jq -r '.[] | .[] | select(.name | contains("Azure") ) | ._links.download.href' 2>/dev/null)
 
-# STEMCELL_DOWNLOAD_LINK=$(curl -sX GET $STEMCELL_PRODUCT_URL -H "Authorization: Bearer $PIVNET_TOKEN" | awk '{ print substr ($0, 36, length($0) - 66 ) }' | sed 's/amp;//g')
+STEMCELL_DOWNLOAD_LINK=$(curl -sX GET $STEMCELL_PRODUCT_URL -H "Authorization: Bearer $PIVNET_TOKEN" | awk '{ print substr ($0, 36, length($0) - 66 ) }' | sed 's/amp;//g')
 
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "cat << EOF > /home/ubuntu/download_stemcell.sh 
-# curl -O -J -X GET '$STEMCELL_DOWNLOAD_LINK'
-# EOF"
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "cat << EOF > /home/ubuntu/download_stemcell.sh 
+curl -O -J -X GET '$STEMCELL_DOWNLOAD_LINK'
+EOF"
 
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL 'bash /home/ubuntu/download_stemcell.sh'
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL 'bash /home/ubuntu/download_stemcell.sh'
 
-# echo "Uploading Stemcell to Opsman..."
+echo "Uploading Stemcell to Opsman..."
 
-# ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "curl -k "https://$OPSMAN_IP/api/v0/stemcells" -X POST -H 'Authorization: Bearer $OPSMAN_TOKEN' -F 'stemcell[file]=@/home/ubuntu/bosh-stemcell-$STEMCELL_VERSION-azure-hyperv-ubuntu-xenial-go_agent.tgz' -F 'stemcell[floating]=false'"
+ssh -q -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL "curl -k "https://$OPSMAN_URL/api/v0/stemcells" -X POST -H 'Authorization: Bearer $OPSMAN_TOKEN' -F 'stemcell[file]=@/home/ubuntu/bosh-stemcell-$STEMCELL_VERSION-azure-hyperv-ubuntu-xenial-go_agent.tgz' -F 'stemcell[floating]=false'"
 
-# echo "Stemcell upload completed..."
+echo "Stemcell upload completed..."
 
-# CF_GUID=$(curl -k -X GET https://$OPSMAN_URL/api/v0/staged/products -H "Authorization: Bearer $OPSMAN_TOKEN" | jq -r '.[] | select(.type=="cf") | .guid')
+CF_GUID=$(curl -k -X GET https://$OPSMAN_URL/api/v0/staged/products -H "Authorization: Bearer $OPSMAN_TOKEN" | jq -r '.[] | select(.type=="cf") | .guid')
 
-# associate_stemcell()
-# {
-#   cat <<EOF
-# {
-#   "products": [
-#     {
-#       "guid": "$CF_GUID",
-#       "staged_stemcells": [
-#         {
-#           "os": "ubuntu-xenial",
-#           "version": "$STEMCELL_VERSION"
-#         }
-#       ]
-#     }
-#   ]
-# }
-# EOF
-# }
+associate_stemcell()
+{
+  cat <<EOF
+{
+  "products": [
+    {
+      "guid": "$CF_GUID",
+      "staged_stemcells": [
+        {
+          "os": "ubuntu-xenial",
+          "version": "$STEMCELL_VERSION"
+        }
+      ]
+    }
+  ]
+}
+EOF
+}
 
-# curl -k -X PATCH -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(associate_stemcell)" "https://$OPSMAN_URL/api/v0/stemcell_associations"
+curl -k -X PATCH -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(associate_stemcell)" "https://$OPSMAN_URL/api/v0/stemcell_associations"
 
-# echo "Stemcell associated with TAS..."
+echo "Stemcell associated with TAS..."
 
+echo "Configuring TAS..."
+
+export OM_VAR_apps_domain="apps.$RESOURCE_GROUP.$TF_VAR_domain"
+export OM_VAR_sys_domain="sys.$RESOURCE_GROUP.$TF_VAR_domain"
+
+export OM_VAR_opsman_ca_cert=$(curl -sk -X GET -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" "https://$OPSMAN_URL/api/v0/certificate_authorities" | jq -r '.[] | .[].cert_pem')
+
+CERT_DOMAINS="*.$RESOURCE_GROUP.$TF_VAR_domain,*.apps.$RESOURCE_GROUP.$TF_VAR_domain,*.sys.$RESOURCE_GROUP.$TF_VAR_domain,*.login.sys.$RESOURCE_GROUP.$TF_VAR_domain,*.uaa.sys.$RESOURCE_GROUP.$TF_VAR_domain"
+CERTIFICATE=$(om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k generate-certificate -d $CERT_DOMAINS)
+export OM_VAR_properties_networking_poe_ssl_certs_0_certificate_cert_pem=$(echo $CERTIFICATE | jq -r ".certificate")
+export OM_VAR_properties_networking_poe_ssl_certs_0_certificate_private_key_pem=$(echo $CERTIFICATE | jq -r ".key")
+
+CERT_DOMAINS_UAA="*.login.sys.$RESOURCE_GROUP.$TF_VAR_domain,*.uaa.sys.$RESOURCE_GROUP.$TF_VAR_domain"
+CERTIFICATE_UAA=$(om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k generate-certificate -d $CERT_DOMAINS_UAA)
+export OM_VAR_uaa_service_provider_key_credentials_cert_pem=$(echo $CERTIFICATE_UAA | jq -r ".certificate")
+export OM_VAR_uaa_service_provider_key_credentials_private_key_pem=$(echo $CERTIFICATE_UAA | jq -r ".key")
+
+om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k configure-product -c cf_config.yml --vars-env OM_VAR
+
+echo "Running apply changes..."
 apply_changes()
 {
   cat <<EOF
@@ -314,11 +339,12 @@ EOF
 
 curl -k -X POST -H "Content-Type: application/json" -H "Authorization: Bearer $OPSMAN_TOKEN" -d "$(apply_changes)" "https://$OPSMAN_URL/api/v0/installations"
 
+
 echo "
 
-Apply changes to deploy Bosh is currently running. 
+Apply changes is currently running. 
 You Opsman URL is $OPSMAN_URL
 Your username is admin
-Your password is $OPSMAN_PASSWORD
 ssh to Opsman vm:
 ssh -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL"
+

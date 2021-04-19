@@ -19,6 +19,9 @@ variable "opsman_image_url" {
   type    = string
 }
 
+variable "domain" {
+  type    = string
+}
 
 #############################################################################
 # DATA
@@ -29,6 +32,11 @@ data "azurerm_subscription" "current" {}
 data "azurerm_public_ip" "opsman_ipaddress" {
   name                = azurerm_public_ip.opsman_ip.name
   resource_group_name = azurerm_public_ip.opsman_ip.resource_group_name
+}
+
+data "azurerm_public_ip" "tas_lb_ipaddress" {
+  name                = azurerm_public_ip.tas_lb_ip.name
+  resource_group_name = azurerm_public_ip.tas_lb_ip.resource_group_name
 }
 
 #############################################################################
@@ -238,15 +246,101 @@ resource "azurerm_network_interface" "opsman_nic" {
   }
 }
 
+resource "azurerm_public_ip" "tas_lb_ip" {
+  name                = "tas_lb_ip"
+  location            = azurerm_resource_group.rg_tas.location
+  resource_group_name = azurerm_resource_group.rg_tas.name
+  allocation_method   = "Static"
+  sku                 = "Standard"
+}
+
+resource "azurerm_lb" "tas_lb" {
+  name                = "tas_lb"
+  location            = azurerm_resource_group.rg_tas.location
+  resource_group_name = azurerm_resource_group.rg_tas.name
+  sku                 = "Standard"
+
+  frontend_ip_configuration {
+    name                 = "tas_frontend_ip"
+    public_ip_address_id = azurerm_public_ip.tas_lb_ip.id
+  }
+}
+
+resource "azurerm_lb_backend_address_pool" "tas_lb_backend_pool" {
+  loadbalancer_id = azurerm_lb.tas_lb.id
+  name            = "tas_lb_backend_pool"
+}
+
+resource "azurerm_lb_backend_address_pool_address" "tas_lb_backend_address1" {
+  name                    = "tas_lb_backend_address1"
+  backend_address_pool_id = azurerm_lb_backend_address_pool.tas_lb_backend_pool.id
+  virtual_network_id      = module.vnet.vnet_id
+  ip_address              = "10.0.12.19"
+}
+
+resource "azurerm_lb_backend_address_pool_address" "tas_lb_backend_address2" {
+  name                    = "tas_lb_backend_address2"
+  backend_address_pool_id = azurerm_lb_backend_address_pool.tas_lb_backend_pool.id
+  virtual_network_id      = module.vnet.vnet_id
+  ip_address              = "10.0.12.20"
+}
+
+resource "azurerm_lb_probe" "tas_lb_probe" {
+  resource_group_name = azurerm_resource_group.rg_tas.name
+  loadbalancer_id     = azurerm_lb.tas_lb.id
+  name                = "http8080"
+  port                = 8080
+}
+
+resource "azurerm_lb_rule" "tas_lb_http" {
+  resource_group_name            = azurerm_resource_group.rg_tas.name
+  loadbalancer_id                = azurerm_lb.tas_lb.id
+  name                           = "HTTP_lb_rule"
+  protocol                       = "Tcp"
+  frontend_port                  = 80
+  backend_port                   = 80
+  frontend_ip_configuration_name = "tas_frontend_ip"
+  probe_id                       = azurerm_lb_probe.tas_lb_probe.id
+  backend_address_pool_id        = azurerm_lb_backend_address_pool.tas_lb_backend_pool.id
+}
+
+resource "azurerm_lb_rule" "tas_lb_https" {
+  resource_group_name            = azurerm_resource_group.rg_tas.name
+  loadbalancer_id                = azurerm_lb.tas_lb.id
+  name                           = "HTTPS_lb_rule"
+  protocol                       = "Tcp"
+  frontend_port                  = 443
+  backend_port                   = 443
+  frontend_ip_configuration_name = "tas_frontend_ip"
+  probe_id                       = azurerm_lb_probe.tas_lb_probe.id
+  backend_address_pool_id        = azurerm_lb_backend_address_pool.tas_lb_backend_pool.id
+}
+
+## DNS ##
+
 resource "azurerm_dns_a_record" "opsman_dns_record" {
   name                = "opsman.${var.resource_group_name}"
-  zone_name           = "used4testing.xyz"
+  zone_name           = "${var.domain}"
   resource_group_name = "dns_jlarrea"
   ttl                 = 300
   records             = [data.azurerm_public_ip.opsman_ipaddress.ip_address]
 }
 
+resource "azurerm_dns_a_record" "sys_lb_dns_record" {
+  name                = "*.sys.${var.resource_group_name}"
+  zone_name           = "${var.domain}"
+  resource_group_name = "dns_jlarrea"
+  ttl                 = 300
+  records             = [data.azurerm_public_ip.tas_lb_ipaddress.ip_address]
+}
 
+resource "azurerm_dns_a_record" "apps_lb_dns_record" {
+  name                = "*.apps.${var.resource_group_name}"
+  zone_name           = "${var.domain}"
+  resource_group_name = "dns_jlarrea"
+  ttl                 = 300
+  records             = [data.azurerm_public_ip.tas_lb_ipaddress.ip_address]
+}
 
 ## STORAGE ACCOUNTS ##
 
@@ -349,6 +443,13 @@ resource "azurerm_linux_virtual_machine" "opsman-vm" {
   }
 }
 
+## FOR TAS CONFIGURATION ##
+
+resource "random_password" "credhub_for_tas" {
+  length  = 20
+  special = true
+  override_special = "_%@"
+}
 
 #############################################################################
 # PROVISIONERS
@@ -359,6 +460,7 @@ resource "null_resource" "opsman-config" {
   provisioner "local-exec" {
     command = <<EOT
 echo "export SP_SECRET=${azuread_service_principal_password.sp_for_tas.value}" >> next-step.txt
+echo "export OM_VAR_credhub_secret=${random_password.credhub_for_tas.result}" >> next-step.txt
 echo "export OPSMAN_URL=${azurerm_dns_a_record.opsman_dns_record.name}.${azurerm_dns_a_record.opsman_dns_record.zone_name}" >> next-step.txt
 echo "export SUBSCRIPTION_ID=${data.azurerm_subscription.current.subscription_id}" >> next-step.txt
 echo "export TENANT_ID=${data.azurerm_subscription.current.tenant_id}" >> next-step.txt
