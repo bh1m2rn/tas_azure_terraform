@@ -23,6 +23,10 @@ variable "domain" {
   type    = string
 }
 
+variable "dns_zone" {
+  type    = string
+}
+
 #############################################################################
 # DATA
 #############################################################################
@@ -320,24 +324,24 @@ resource "azurerm_lb_rule" "tas_lb_https" {
 
 resource "azurerm_dns_a_record" "opsman_dns_record" {
   name                = "opsman.${var.resource_group_name}"
-  zone_name           = "${var.domain}"
-  resource_group_name = "dns_jlarrea"
+  zone_name           = var.domain
+  resource_group_name = var.dns_zone
   ttl                 = 300
   records             = [data.azurerm_public_ip.opsman_ipaddress.ip_address]
 }
 
 resource "azurerm_dns_a_record" "sys_lb_dns_record" {
   name                = "*.sys.${var.resource_group_name}"
-  zone_name           = "${var.domain}"
-  resource_group_name = "dns_jlarrea"
+  zone_name           = var.domain
+  resource_group_name = var.dns_zone
   ttl                 = 300
   records             = [data.azurerm_public_ip.tas_lb_ipaddress.ip_address]
 }
 
 resource "azurerm_dns_a_record" "apps_lb_dns_record" {
   name                = "*.apps.${var.resource_group_name}"
-  zone_name           = "${var.domain}"
-  resource_group_name = "dns_jlarrea"
+  zone_name           = var.domain
+  resource_group_name = var.dns_zone
   ttl                 = 300
   records             = [data.azurerm_public_ip.tas_lb_ipaddress.ip_address]
 }

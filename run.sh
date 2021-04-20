@@ -14,14 +14,16 @@ read -p 'Please enter a unique name for your resource group - all lowercase (Exa
 read -sp 'Please enter a new password for Opsman: ' OPSMAN_PASSWORD
 echo ''
 
-export TF_VAR_resource_group_name=$RESOURCE_GROUP
-export TF_VAR_domain="used4testing.xyz" 
+# I am hardcoding these values but feel free to create your own dns zone.
+export TF_VAR_domain="used4testing.xyz"
+export TF_VAR_dns_zone="dns_jlarrea"
+
+# Other variables that need to be exported for Terraform to consume
+export TF_VAR_resource_group_name=$RESOURCE_GROUP 
 export TF_VAR_location
 export TF_VAR_opsman_image_url="https://opsmanager$TF_VAR_location.blob.core.windows.net/images/ops-manager-$OPSMAN_VERSION.vhd"
 export TF_VAR_sp_identifier="http://BoshAzure$RESOURCE_GROUP"
-export OPSMAN_URL="opsman.$RESOURCE_GROUP.$TF_VAR_domain"
-export TAS_VERSION
-export REFRESH_TOKEN
+
 
 # Create a keypair
 if [ -d "$HOME/.ssh/azurekeys" ]; then
