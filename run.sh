@@ -348,5 +348,9 @@ Apply changes is currently running.
 You Opsman URL is $OPSMAN_URL
 Your username is admin
 ssh to Opsman vm:
-ssh -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL"
+ssh -o StrictHostKeyChecking=no -i ~/.ssh/azurekeys/opsman ubuntu@$OPSMAN_URL
+
+if you ran the docker container you can add the private key to your local ~/.ssh directory:"
+
+cat ~/.ssh/azurekeys/opsman
 
