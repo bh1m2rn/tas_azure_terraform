@@ -30,7 +30,7 @@ if [ -d "$HOME/.ssh/azurekeys" ]; then
     echo "Key pair already exists"
 else
     echo "Creating a key pair in ~/.ssh/azurekeys"
-    mkdir ~/.ssh/azurekeys
+    mkdir -p ~/.ssh/azurekeys
     ssh-keygen -t rsa -f ~/.ssh/azurekeys/opsman -C ubuntu -N ""
 fi
 
