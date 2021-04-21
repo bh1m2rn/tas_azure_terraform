@@ -451,8 +451,7 @@ resource "azurerm_linux_virtual_machine" "opsman-vm" {
 
 resource "random_password" "credhub_for_tas" {
   length  = 20
-  special = true
-  override_special = "_%@"
+  special = false
 }
 
 #############################################################################
