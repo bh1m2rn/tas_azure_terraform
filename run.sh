@@ -65,9 +65,9 @@ curl -k -X POST -H "Content-Type: application/json" -d "$(opsman_authentication_
 
 sleep 60
 
-uaac target https://$OPSMAN_URL/uaa --skip-ssl-validation
-uaac token owner get opsman admin -s "" -p $OPSMAN_PASSWORD
-OPSMAN_TOKEN=$(uaac context | grep access_token | cut -c 21-)
+uaa target https://$OPSMAN_URL/uaa --skip-ssl-validation
+uaa get-password-token opsman -u admin -s "" -p $OPSMAN_PASSWORD
+OPSMAN_TOKEN=$(uaa context | jq -r ".Token.access_token")
 
 director_newconfig()
 {
