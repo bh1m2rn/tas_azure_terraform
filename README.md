@@ -18,8 +18,11 @@ Alternatively, you can use the Docker image which already has all the needed pac
 
 docker run -it jameslarrea/tanzu:tas_on_azure_v1
 
-Cleaning up:
+NOTE: If you are part of the Tanzu support team, feel free to use my test domain, which is hardcoded. If you'd rather use your own, simply create a new DNS Zone in Azure, add the Azure name servers to your DNS registrar and change 2 variables in the run.sh script:
+TF_VAR_domain
+TF_VAR_dns_zone
 
+Cleaning up:
 Since your terraform state file is in the container and TAS is not managed by terraform, the easiest way to delete all resources when you are done testing is to delete the resource group, dns record and service principal.
 
 You can simply run the clean_up.sh script to take care of this for you.
