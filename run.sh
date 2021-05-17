@@ -6,9 +6,9 @@ echo "Log in with your VMware AD account on your browser"
 az login
 
 read -p 'Please enter the Opsman exact version and build. 
-You can find that info here https://network.pivotal.io/products/ops-manager/#/releases (Example: 2.9.11-build.186). : ' OPSMAN_VERSION
-read -p 'Please enter the TAS version you would like to install: ' TAS_VERSION
-read -p 'Please enter your Pivnet API refresh token. If you do NOT have one: Log into pivnet > edit profile > request new refresh token). ' REFRESH_TOKEN
+You can find that info here https://network.pivotal.io/products/ops-manager/#/releases (Example: 2.9.11-build.186): ' OPSMAN_VERSION
+read -p 'Please enter the TAS version you would like to install (Example: 2.9.20): ' TAS_VERSION
+read -p 'Please enter your Pivnet API refresh token. If you do NOT have one: Log into pivnet > edit profile > request new refresh token: ' REFRESH_TOKEN
 read -p 'Which is your preferred location? (eastus or westus): ' TF_VAR_location
 read -p 'Please enter a unique name for your resource group - all lowercase (Example: jsmith): ' RESOURCE_GROUP
 read -sp 'Please enter a new password for Opsman: ' OPSMAN_PASSWORD
@@ -326,7 +326,16 @@ CERTIFICATE_UAA=$(om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k generate-cer
 export OM_VAR_uaa_service_provider_key_credentials_cert_pem=$(echo $CERTIFICATE_UAA | jq -r ".certificate")
 export OM_VAR_uaa_service_provider_key_credentials_private_key_pem=$(echo $CERTIFICATE_UAA | jq -r ".key")
 
-om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k configure-product -c cf_config.yml --vars-env OM_VAR
+if [[ $TAS_VERSION == "2.10"* ]]; then
+    CONFIG_FILE="cf_210_config.yml"
+elif [[ $TAS_VERSION == "2.9"* ]]; then 
+    CONFIG_FILE="cf_29_config.yml"
+else
+    echo "This version of TAS is not supported by this tool"
+    exit 1
+fi
+
+om -u admin -p $OPSMAN_PASSWORD -t $OPSMAN_URL -k configure-product -c $CONFIG_FILE --vars-env OM_VAR
 
 echo "Running apply changes..."
 apply_changes()
