@@ -2,6 +2,8 @@
 
 The purpose of this script is to quickly deploy a Tanzu Application Service test/sandbox environment on Azure. Ideally, you would have some CI/CD tool that deploys TAS, but the script below can be used in case you don't.
 
+At the moment only OPSMAN/TAS 2.10 & 2.9 are supported.
+
 You will need to have the following cli/tools installed to run this script:
 1) az
 2) terraform
