@@ -7,7 +7,10 @@ At the moment only OPSMAN/TAS 2.10 & 2.9 are supported.
 You will need to have the following cli/tools installed to run this script:
 1) az
 2) terraform
-3) uaa (it uses the newer golang based cli https://github.com/cloudfoundry-incubator/uaa-cli)
+3) uaa (it uses the golang based cli https://github.com/cloudfoundry-incubator/uaa-cli)
+To install:
+  a. go get code.cloudfoundry.org/uaa-cli
+  b. mv /go/bin/uaa-cli /bin/uaa)
 4) om (https://github.com/pivotal-cf/om)
 5) curl
 6) jq
